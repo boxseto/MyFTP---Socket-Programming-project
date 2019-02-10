@@ -1,5 +1,5 @@
 CC = gcc
-LIB = -lsocket -lnsl myftp.o
+LIB = -lsocket -lnsl myftp.o -lpthread
 
 all: myftp myftpclient myftpserver
 
