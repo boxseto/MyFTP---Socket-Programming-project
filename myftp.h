@@ -19,6 +19,6 @@ int socket_create();
 
 void getHostByName(char * hostname);
 
-void send_socket(int sd, char * buff);
+void send_socket(int sd, void * buff, int buf_len);
 
-void recv_socket(int client_sd, char * buff);
+void recv_socket(int sd, void * buff, int buf_len);

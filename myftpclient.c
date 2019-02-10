@@ -16,7 +16,14 @@ int connect_socket(char *ipaddr, int port){
 }
 
 void listfile(){
-
+	message_s message;
+	message->protocol = "myftp";
+	message->type = 0xA1;
+	message->length = 10;
+	if((len=send(sd,message,message->length,0))<0){
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		exit(0);
+	}
 }
 
 void downloadfile(char *filename){

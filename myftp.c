@@ -22,18 +22,36 @@ void getHostByName(char * hostname){
 	}
 }
 
-void send_socket(int sd, char * buff){
-	int len;
-	if((len=send(sd,buff,strlen(buff),0))<0){
-		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
-		exit(0);
+int send_socket(int sd, void * buff, int buf_len){
+	int n_left = buf_len;
+	int n;
+	while (n_left > 0){
+		if((n = send(sd,buff+(buf_len-n_left),n_left, 0)) < 0){
+			if(errorno == EINTR)
+				n = 0;
+			else
+				return -1;
+		}else if(n == 0){
+			return 0;
+		}
+		n_left -= n;
 	}
+	return buf_len;
 }
 
-void recv_socket(int client_sd, char * buff){
-	int len;
-	if((len=recv(client_sd,buff,sizeof(buff),0))<0){
-		printf("receive error: %s (Errno:%d)\n", strerror(errno),errno);
-		exit(0);
+int recv_socket(int sd, void * buff, int buf_len){
+	int n_left = buf_len;
+	int n;
+	while (n_left > 0){
+		if((n = recv(sd,buff+(buf_len-n_left),n_left, 0)) < 0){
+			if(errorno == EINTR)
+				n = 0;
+			else
+				return -1;
+		}else if(n == 0){
+			return 0;
+		}
+		n_left -= n;
 	}
+	return buf_len;
 }
