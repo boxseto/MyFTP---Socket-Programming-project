@@ -131,13 +131,13 @@ void downloadfile(int client_sd, char *filename){
 	fclose(fp);
 
 	//send file (header)
-	filereply = forgereply(0xFF, strlen(data));
+	filereply = forgereply(0xFF, fsize);
 	if((len=send(client_sd, &filereply , sizeof(filereply),0))<0){
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 		return;
 	}
 	//send file (file)
-	send_socket(client_sd, data, strlen(data));
+	send_socket(client_sd, data, fsize);
 	free(data);
 }
 
@@ -151,10 +151,10 @@ void uploadfile(int client_sd, char *filename){
 		return;
 	}
 	//open File
-	char *buff[100];
+	unsigned char *buff[100];
 	FILE *fp;
 	long fsize;
-	fp = fopen(filename, "w");
+	fp = fopen(filename, "wb");
 	//get file Header
 	if((len=recv(client_sd, buff,sizeof(struct message_s),0))<0){
 		printf("receive error: %s (Errno:%d)\n", strerror(errno),errno);
