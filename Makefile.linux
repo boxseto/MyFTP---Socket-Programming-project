@@ -1,4 +1,4 @@
-CC = gcc -std=c99
+CC = gcc
 LIB = myftp.o -lpthread
 
 all: myftp myftpclient myftpserver

@@ -1,6 +1,7 @@
 #include "myftp.h"
 #include <pthread.h>
 #include <dirent.h>
+#include <sys/stat.h>
 
 pthread_mutex_t mutex;
 int avaliable[10];
@@ -50,13 +51,21 @@ struct message_s forgereply(unsigned char type, int payloadlen){
 void sendfilelist(int client_sd){
 	//prepare files to send
 	char* dirholder = malloc(5000*sizeof(char));
+  char currentPath[FILENAME_MAX];
+  struct stat statbuf;
 	*dirholder = '\0';
 	DIR *d;
 	struct dirent *dir;
 	d = opendir(".");
 	if(d){
-		while ((dir = readdir(d)) != NULL){
-			if(dir->d_type == 8){ //DT_REG == 8
+		while((dir = readdir(d)) != NULL){
+			getcwd(currentPath, FILENAME_MAX);
+			strcat(currentPath, "/");
+			strcat(currentPath, dir->d_name);
+			if(stat(currentPath, &statbuf) == -1){
+				return;
+			}
+			if(S_ISREG(statbuf.st_mode) != 0){
 				strcat(dirholder,dir->d_name);
 				strcat(dirholder,"\n");
 			}
