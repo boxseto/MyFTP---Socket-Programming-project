@@ -1,5 +1,6 @@
 #include "myftp.h"
 #include <pthread.h>
+#include <dirent.h>
 
 pthread_mutex_t mutex;
 int avaliable[10];
@@ -34,16 +35,150 @@ int accept_socket(int sd){
 	return client_sd;
 }
 
+struct message_s forgereply(unsigned char type, int payloadlen){
+	struct message_s message;
+	message.protocol[0] = 109; //m
+	message.protocol[1] = 121; //y
+	message.protocol[2] = 102; //f
+	message.protocol[3] = 116; //t
+	message.protocol[4] = 112; //p
+	message.type = type;
+	message.length = 10 + payloadlen;
+	return message;
+}
+
+void sendfilelist(int client_sd){
+	//prepare files to send
+	char* dirholder = malloc(5000*sizeof(char));
+	*dirholder = '\0';
+	DIR *d;
+	struct dirent *dir;
+	d = opendir(".");
+	if(d){
+		while ((dir = readdir(d)) != NULL){
+			if(dir->d_type == 8){ //DT_REG == 8
+				strcat(dirholder,dir->d_name);
+				strcat(dirholder,"\n");
+			}
+		}
+		strcat(dirholder,"\0");
+		closedir(d);
+	}else{
+		printf("Cannot open directory.\n");
+	}
+	//printf("Send length: %d\n contents:\n",strlen(dirholder)+1);
+	//puts(dirholder);
+
+	//send file header
+	struct message_s message = forgereply(0xA2, strlen(dirholder)+1);
+	int len;
+	if((len=send(client_sd, &message , sizeof(message),0))<0){
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+	}
+
+	//send file payload
+	send_socket(client_sd, dirholder, strlen(dirholder)+1);
+
+	//wrap up
+	free(dirholder);
+}
+
+void downloadfile(int client_sd, char *filename){
+	FILE *fp;
+	int len;
+	long fsize;
+	char fullfilename[202];
+	fullfilename[0] = '\0';
+	struct message_s reply;
+
+	//open files
+	strcat(fullfilename, "./");
+	strcat(fullfilename, filename);
+	fp = fopen(fullfilename, "rb");
+	if (fp == NULL){
+		//send error message header
+		reply = forgereply(0xB3, 0);
+		if((len=send(client_sd, &reply , sizeof(reply),0))<0){
+			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		}
+		return;
+	}else{
+		//send exist message header
+		reply = forgereply(0xB2, 0);
+		if((len=send(client_sd, &reply , sizeof(reply),0))<0){
+			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		}
+	}
+
+	//get filesize
+	fseek(fp, 0, SEEK_END);
+	fsize = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+
+	//read whole data into buffer
+	char *data = malloc(fsize + 1);
+	*data = '\0';
+	fread(data, fsize, 1, fp);
+	data[fsize] = '\0';
+	//wrap up
+	fclose(fp);
+
+	//send file (header)
+	reply = forgereply(0xFF, len(data)+1);
+	if((len=send(client_sd, &reply , sizeof(reply),0))<0){
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+	}
+	//send file (file)
+	send_socket(client_sd, data, strlen(data)+1);
+	free(data);
+}
+
 void *worker(void *args){
 	int flag;
 	char* buff[100];
+	char filename[200];
+	filename[0] = '\0';
+	int state, remainlen;
 	int *argument = (int *)args;
 	int threadnum = *argument;
 
 	pthread_detach(pthread_self());
+//get header
+	int len;
+	if((len=recv(*(argument+1), buff,sizeof(struct message_s),0))<0){
+		printf("receive error: %s (Errno:%d)\n", strerror(errno),errno);
+		pthread_exit(NULL);
+	}
+	struct message_s *header = malloc(sizeof(struct message_s));
+	memcpy(header,buff,10);
+//	printf("header: %s, %d, %d", header->protocol, header->type, header->length);
+	if(header->type == 0xA1){
+		sendfilelist(*(argument+1));
+	}else if(header->type == 0XB1){
+		//get payload
+		remainlen = header->length - 10;
+		while((state = recv_socket(sd, buff, remainlen>100?100:remainlen)) > 0){
+			printf("File to download: %s", buff);
+			strcat(filename,buff);
+			remainlen -= 100;
+			if(remainlen <= 0) break;
+		}
+		strcat(filename,''\0');
+		downloadfile(*(argument+1), filename);
+	}else if(header->type == 0XC1){
+		//get payload
+		remainlen = header->length - 10;
+		while((state = recv_socket(sd, buff, remainlen>100?100:remainlen)) > 0){
+			printf("File to upload: %s", buff);
+			remainlen -= 100;
+			if(remainlen <= 0) break;
+		}
+	}else{
+		printf("Header error: Wrong header type\n");
+		free(header);
+		pthread_exit(NULL);
+	}
 
-	recv_socket(*(argument+1), buff, 100);
-	printf("%s\n", buff);
 
 	pthread_mutex_lock(&mutex);
 	for(int j = 0 ; j < 10 ; j++){
@@ -52,6 +187,7 @@ void *worker(void *args){
 		}
 	}
 	pthread_mutex_unlock(&mutex);
+	free(header);
 	pthread_exit(NULL);
 }
 

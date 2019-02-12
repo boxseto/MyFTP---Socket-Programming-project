@@ -2,6 +2,11 @@
 
 int socket_create(){
 	int sd=socket(AF_INET,SOCK_STREAM,0);
+	long val = 1;
+	if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(long)) == -1){
+		perror("setsockopt");
+		exit(-1);
+	}
 	return sd;
 }
 
@@ -41,22 +46,17 @@ int send_socket(int sd, void * buff, int buf_len){
 
 int recv_socket(int sd, void * buff, int buf_len){
 	int n_left = buf_len;
-	int n;
-	printf("FIRST READ: %d, remaining: %d \n", n, n_left);
+	int n = 0;
 	while (n_left > 0){
-	printf("1READ: %d, remaining: %d \n", n, n_left);
 		if((n = recv(sd,buff+(buf_len-n_left),n_left, 0)) < 0){
-		printf("2READ: %d, remaining: %d \n", n, n_left);
 			if(errno == EINTR)
 				n = 0;
 			else
 				return -1;
 		}else if(n == 0){
-		printf("3READ: %d, remaining: %d \n", n, n_left);
 			return 0;
 		}
 		n_left -= n;
 	}
-	printf("FINAL READ: %d, remaining: %d \n", n, n_left);
 	return buf_len;
 }
