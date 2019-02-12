@@ -66,7 +66,8 @@ void downloadfile(int sd, char *filename){
 		exit(0);
 	}
 	//send payload
-	send_socket(client_sd, filename, strlen(filename)+1);
+//	printf("Send request Payload: %s\n", filename);
+	send_socket(sd, filename, strlen(filename)+1);
 
 	//get Header
 	char *buff[100];
@@ -78,9 +79,10 @@ void downloadfile(int sd, char *filename){
 	}
 	struct message_s *header = malloc(sizeof(struct message_s));
 	memcpy(header,buff,10);
+	//printf("header: %s, %d, %d\n", header->protocol, header->type, header->length);
 	if(header->type == 0xB3){
 		//Error
-		printf("File not exist.\n", );
+		printf("File not exist.\n");
 		return;
 	}else{
 		fp = fopen(filename, "w");
@@ -93,20 +95,36 @@ void downloadfile(int sd, char *filename){
 	}
 	struct message_s *fileheader = malloc(sizeof(struct message_s));
 	memcpy(fileheader,buff,10);
-	//printf("header: %s, %d, %d", header->protocol, header->type, header->length);
+	//printf("header: %s, %d, %d\n", fileheader->protocol, fileheader->type, fileheader->length);
 
 	//get file payload
 	int state;
 	int remainlen = fileheader->length - 10;
 	while((state = recv_socket(sd, buff, remainlen>100?100:remainlen)) > 0){
-		fwrite (buff , sizeof(char), sizeof(buff), fp);
+		//printf("Buff length: %d, Content: \n", remainlen>100?100:remainlen );
+		//printf("%s\n\n", buff);
+		fwrite (buff , sizeof(char), remainlen>100?100:remainlen, fp);
 		remainlen -= 100;
 		if(remainlen <= 0) break;
 	}
+
+	//wrap up
 	fclose(fp);
+	free(header);
+	free(fileheader);
 }
 
 void uploadfile(int sd, char *filename){
+	FILE *fp;
+	int len;
+	char *buff[100];
+	long fsize;
+	//check file exist
+	fp = fopen(filename, "rb");
+	if (fp == NULL){
+		printf("file not exist.\n");
+		exit(0);
+	}
 	//send header
 	struct message_s message;
 	message.protocol[0] = 109; //m
@@ -115,20 +133,65 @@ void uploadfile(int sd, char *filename){
 	message.protocol[3] = 116; //t
 	message.protocol[4] = 112; //p
 	message.type = 0xC1;
-	message.length = 10;
-	int len;
+	message.length = 10 + strlen(filename) + 1;
 	if((len=send(sd, &message , sizeof(message),0))<0){
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		fclose(fp);
+		exit(0);
+	}
+	//send payload
+	send_socket(sd, filename, strlen(filename)+1);
+
+	//get Header
+	if((len=recv(sd, buff,sizeof(struct message_s),0))<0){
+		printf("receive error: %s (Errno:%d)\n", strerror(errno),errno);
+		fclose(fp);
+		exit(0);
+	}
+	struct message_s *header = malloc(sizeof(struct message_s));
+	memcpy(header,buff,10);
+	if(header->type != 0xC2){
+		printf("Server error Cannot upload\n");
+		fclose(fp);
+		free(header);
 		exit(0);
 	}
 
+	//get filesize
+	fseek(fp, 0, SEEK_END);
+	fsize = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	printf("file size prepare: %d\n", fsize);
 
-	char *buff[100];
-	int state;
-	while((state = recv_socket(sd, buff,100)) > 0){
-		printf("%s\n", buff);
+	//read whole data into buffer
+	char *data = malloc(fsize + 1);
+	*data = '\0';
+	fread(data, fsize, 1, fp);
+	data[fsize] = '\0';
+
+	//send file (header)
+	struct message_s fileheader;
+	fileheader.protocol[0] = 109; //m
+	fileheader.protocol[1] = 121; //y
+	fileheader.protocol[2] = 102; //f
+	fileheader.protocol[3] = 116; //t
+	fileheader.protocol[4] = 112; //p
+	fileheader.type = 0xFF;
+	fileheader.length = 10 + strlen(data);
+	if((len=send(sd, &fileheader , sizeof(fileheader),0))<0){
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		fclose(fp);
+		free(header);
+		free(data);
+		exit(0);
 	}
+	//send file (file)
+	send_socket(sd, data, strlen(data));
+	free(data);
 
+	//wrap up
+	free(header);
+	fclose(fp);
 }
 
 
@@ -148,10 +211,10 @@ int main(int argc, char **argv) {
 	if(strcmp(argv[3], "list") == 0){
 		listfile(sd);
 	}else if(strcmp(argv[3],"get") == 0){
-		if(argc == 5){downloadfile(sd, argv[5]);}
+		if(argc == 5){downloadfile(sd, argv[4]);}
 		else{printf("no file specified.\n");}
 	}else if(strcmp(argv[3],"put") == 0){
-		if(argc == 5){uploadfile(sd, argv[5]);}
+		if(argc == 5){uploadfile(sd, argv[4]);}
 		else{printf("no file specified.\n");}
 	}
 

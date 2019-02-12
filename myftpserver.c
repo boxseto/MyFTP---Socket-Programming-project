@@ -90,23 +90,29 @@ void downloadfile(int client_sd, char *filename){
 	char fullfilename[202];
 	fullfilename[0] = '\0';
 	struct message_s reply;
+	struct message_s filereply;
 
 	//open files
 	strcat(fullfilename, "./");
 	strcat(fullfilename, filename);
+	printf("file to download: %s\n", filename);
 	fp = fopen(fullfilename, "rb");
 	if (fp == NULL){
+		printf("file not exist. Send error header\n");
 		//send error message header
 		reply = forgereply(0xB3, 0);
 		if((len=send(client_sd, &reply , sizeof(reply),0))<0){
 			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+			return;
 		}
 		return;
 	}else{
+		printf("file exist. Send OK header\n");
 		//send exist message header
 		reply = forgereply(0xB2, 0);
 		if((len=send(client_sd, &reply , sizeof(reply),0))<0){
 			printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+			return;
 		}
 	}
 
@@ -114,6 +120,7 @@ void downloadfile(int client_sd, char *filename){
 	fseek(fp, 0, SEEK_END);
 	fsize = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
+	printf("file size prepare: %d\n", fsize);
 
 	//read whole data into buffer
 	char *data = malloc(fsize + 1);
@@ -124,13 +131,54 @@ void downloadfile(int client_sd, char *filename){
 	fclose(fp);
 
 	//send file (header)
-	reply = forgereply(0xFF, len(data)+1);
-	if((len=send(client_sd, &reply , sizeof(reply),0))<0){
+	filereply = forgereply(0xFF, strlen(data));
+	if((len=send(client_sd, &filereply , sizeof(filereply),0))<0){
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		return;
 	}
 	//send file (file)
-	send_socket(client_sd, data, strlen(data)+1);
+	send_socket(client_sd, data, strlen(data));
 	free(data);
+}
+
+void uploadfile(int client_sd, char *filename){
+	struct message_s reply;
+	int len;
+	//send OK reply
+	reply = forgereply(0xC2, 0);
+	if((len=send(client_sd, &reply , sizeof(reply),0))<0){
+		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
+		return;
+	}
+	//open File
+	char *buff[100];
+	FILE *fp;
+	long fsize;
+	fp = fopen(filename, "w");
+	//get file Header
+	if((len=recv(client_sd, buff,sizeof(struct message_s),0))<0){
+		printf("receive error: %s (Errno:%d)\n", strerror(errno),errno);
+		exit(0);
+	}
+	struct message_s *fileheader = malloc(sizeof(struct message_s));
+	memcpy(fileheader,buff,10);
+	//printf("header: %s, %d, %d\n", fileheader->protocol, fileheader->type, fileheader->length);
+
+	//get file payload
+	int state;
+	int remainlen = fileheader->length - 10;
+	while((state = recv_socket(client_sd, buff, remainlen>100?100:remainlen)) > 0){
+		//printf("Buff length: %d, Content: \n", remainlen>100?100:remainlen );
+		//printf("%s\n\n", buff);
+		fwrite (buff , sizeof(char), remainlen>100?100:remainlen, fp);
+		remainlen -= 100;
+		if(remainlen <= 0) break;
+	}
+
+	//wrap up
+	fclose(fp);
+	free(fileheader);
+
 }
 
 void *worker(void *args){
@@ -151,28 +199,21 @@ void *worker(void *args){
 	}
 	struct message_s *header = malloc(sizeof(struct message_s));
 	memcpy(header,buff,10);
-//	printf("header: %s, %d, %d", header->protocol, header->type, header->length);
+	//printf("header: %s, %d, %d\n", header->protocol, header->type, header->length);
 	if(header->type == 0xA1){
 		sendfilelist(*(argument+1));
 	}else if(header->type == 0XB1){
 		//get payload
 		remainlen = header->length - 10;
-		while((state = recv_socket(sd, buff, remainlen>100?100:remainlen)) > 0){
-			printf("File to download: %s", buff);
-			strcat(filename,buff);
-			remainlen -= 100;
-			if(remainlen <= 0) break;
-		}
-		strcat(filename,''\0');
+		recv_socket(*(argument+1), filename, remainlen);
+//		printf("File to download: %s\n", filename);
 		downloadfile(*(argument+1), filename);
 	}else if(header->type == 0XC1){
 		//get payload
 		remainlen = header->length - 10;
-		while((state = recv_socket(sd, buff, remainlen>100?100:remainlen)) > 0){
-			printf("File to upload: %s", buff);
-			remainlen -= 100;
-			if(remainlen <= 0) break;
-		}
+		recv_socket(*(argument+1), filename, remainlen);
+		printf("File to upload: %s\n", filename);
+		uploadfile(*(argument+1), filename);
 	}else{
 		printf("Header error: Wrong header type\n");
 		free(header);
