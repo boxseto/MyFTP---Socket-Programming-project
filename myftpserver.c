@@ -45,6 +45,7 @@ struct message_s forgereply(unsigned char type, int payloadlen){
 	message.protocol[4] = 112; //p
 	message.type = type;
 	message.length = 10 + payloadlen;
+	message.length = htonl(message.length);
 	return message;
 }
 
@@ -175,7 +176,7 @@ void uploadfile(int client_sd, char *filename){
 
 	//get file payload
 	int state;
-	int remainlen = fileheader->length - 10;
+	int remainlen = ntohl(fileheader->length) - 10;
 	while((state = recv_socket(client_sd, buff, remainlen>100?100:remainlen)) > 0){
 		//printf("Buff length: %d, Content: \n", remainlen>100?100:remainlen );
 		//printf("%s\n\n", buff);
@@ -191,6 +192,7 @@ void uploadfile(int client_sd, char *filename){
 }
 
 void *worker(void *args){
+	int j;
 	int flag;
 	char* buff[100];
 	char filename[200];
@@ -213,13 +215,13 @@ void *worker(void *args){
 		sendfilelist(*(argument+1));
 	}else if(header->type == 0XB1){
 		//get payload
-		remainlen = header->length - 10;
+		remainlen = ntohl(header->length) - 10;
 		recv_socket(*(argument+1), filename, remainlen);
 //		printf("File to download: %s\n", filename);
 		downloadfile(*(argument+1), filename);
 	}else if(header->type == 0XC1){
 		//get payload
-		remainlen = header->length - 10;
+		remainlen = ntohl(header->length) - 10;
 		recv_socket(*(argument+1), filename, remainlen);
 		printf("File to upload: %s\n", filename);
 		uploadfile(*(argument+1), filename);
@@ -231,7 +233,7 @@ void *worker(void *args){
 
 
 	pthread_mutex_lock(&mutex);
-	for(int j = 0 ; j < 10 ; j++){
+	for(j = 0 ; j < 10 ; j++){
 		if(j == -1){
 			avaliable[j] = threadnum;
 		}
@@ -242,11 +244,12 @@ void *worker(void *args){
 }
 
 int main(int argc, char **argv){
+	int j;
   pthread_t thread[10];
 	int sd, client_sd, i = 0, avaliable_flag, avaliable_temp;
   pthread_mutex_init(&mutex, NULL);
 	pthread_mutex_lock(&mutex);
-	for(int j = 0 ; j < 10 ; j++){
+	for(j = 0 ; j < 10 ; j++){
 		avaliable[j] = j;
 	}
 	pthread_mutex_unlock(&mutex);
@@ -264,7 +267,7 @@ int main(int argc, char **argv){
 		client_sd = accept_socket(sd);
 		pthread_mutex_lock(&mutex);
 		avaliable_flag = 0;
-		for(int j = 0 ; j < 10 ; j++){
+		for(j = 0 ; j < 10 ; j++){
 			if(avaliable_flag == 1){
 				avaliable_temp = avaliable[j];
 				avaliable[j] = avaliable[j-1];

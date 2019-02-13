@@ -22,7 +22,7 @@ void listfile(int sd){
 	message.protocol[3] = 116; //t
 	message.protocol[4] = 112; //p
 	message.type = 0xA1;
-	message.length = 10;
+	message.length = htonl(10);
 	int len;
 	if((len=send(sd, &message , sizeof(message),0))<0){
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
@@ -41,7 +41,7 @@ void listfile(int sd){
 
 	//get file payload
 	int state;
-	int remainlen = header->length - 10;
+	int remainlen = ntohl(header->length) - 10;
 	while((state = recv_socket(sd, buff, remainlen>100?100:remainlen)) > 0){
 		printf("%s", buff);
 		remainlen -= 100;
@@ -59,7 +59,7 @@ void downloadfile(int sd, char *filename){
 	message.protocol[3] = 116; //t
 	message.protocol[4] = 112; //p
 	message.type = 0xB1;
-	message.length = 10 + strlen(filename) + 1;
+	message.length = htonl(10 + strlen(filename) + 1);
 	int len;
 	if((len=send(sd, &message , sizeof(message),0))<0){
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
@@ -99,7 +99,7 @@ void downloadfile(int sd, char *filename){
 
 	//get file payload
 	int state;
-	int remainlen = fileheader->length - 10;
+	int remainlen = ntohl(fileheader->length) - 10;
 	//printf("total length: %d\n", remainlen);
 	while((state = recv_socket(sd, buff, remainlen>100?100:remainlen)) > 0){
 		//printf("Buff length: %d\n", remainlen>100?100:remainlen );
@@ -135,7 +135,7 @@ void uploadfile(int sd, char *filename){
 	message.protocol[3] = 116; //t
 	message.protocol[4] = 112; //p
 	message.type = 0xC1;
-	message.length = 10 + strlen(filename) + 1;
+	message.length = htonl(10 + strlen(filename) + 1);
 	if((len=send(sd, &message , sizeof(message),0))<0){
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 		fclose(fp);
@@ -179,7 +179,7 @@ void uploadfile(int sd, char *filename){
 	fileheader.protocol[3] = 116; //t
 	fileheader.protocol[4] = 112; //p
 	fileheader.type = 0xFF;
-	fileheader.length = 10 + fsize;
+	fileheader.length = htonl(10 + fsize);
 	if((len=send(sd, &fileheader , sizeof(fileheader),0))<0){
 		printf("Send Error: %s (Errno:%d)\n",strerror(errno),errno);
 		fclose(fp);
